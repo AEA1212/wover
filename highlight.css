@@ -1,0 +1,7 @@
+/* Saved words on web pages: one amber hue, stronger for words you know less.
+   wover-0 New · wover-1 Learning · wover-2 Familiar · wover-3 Known · wover-4 Mastered */
+::highlight(wover-0) { background-color: rgb(240 160 20 / 0.62); }
+::highlight(wover-1) { background-color: rgb(240 160 20 / 0.46); }
+::highlight(wover-2) { background-color: rgb(240 160 20 / 0.32); }
+::highlight(wover-3) { background-color: rgb(240 160 20 / 0.2); }
+::highlight(wover-4) { background-color: rgb(240 160 20 / 0.1); }

@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Wover",
+  "version": "1.0.0",
+  "description": "Hold a key and point at any word for its definition, pronunciation and translation. Save words, see them highlighted on every page, and review them with spaced repetition.",
+  "icons": {
+    "48": "icons/icon.svg",
+    "96": "icons/icon.svg"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "wover@local",
+      "strict_min_version": "142.0",
+      "data_collection_permissions": {
+        "required": ["websiteContent"]
+      }
+    }
+  },
+  "permissions": ["storage", "alarms"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "scripts": ["common.js", "background.js"]
+  },
+  "action": {
+    "default_title": "Wover: my words",
+    "default_icon": "icons/icon.svg"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["common.js", "content.js"],
+      "css": ["highlight.css"],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ]
+}
