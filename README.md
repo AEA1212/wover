@@ -42,9 +42,9 @@
 
 ## 📦 Installation
 
-### Firefox Add-ons (coming soon)
+### Firefox Add-ons
 
-<a href="https://addons.mozilla.org/firefox/addon/wover/"><img alt="Firefox Add-ons: coming soon" src="https://img.shields.io/badge/Firefox_Add--ons-coming_soon-FF7139?logo=firefoxbrowser&logoColor=white&style=for-the-badge"></a>
+<a href="https://addons.mozilla.org/en-US/firefox/addon/wover/"><img alt="Get Wover on Firefox Add-ons" src="https://img.shields.io/badge/Firefox_Add--ons-Get_Wover-FF7139?logo=firefoxbrowser&logoColor=white&style=for-the-badge"></a>
 
 ### From source
 
