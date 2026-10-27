@@ -17,8 +17,13 @@ globalThis.Wover = (() => {
   const DEFAULT_SETTINGS = {
     targetLang: '',          // language to translate into; chosen on first run
     sourceLang: 'auto',      // language of the words you read; 'auto' follows the page
-    triggerKey: 'Control',   // held while pointing at a word: Control | Alt | Shift
-    accent: 'us',            // preferred recording: us | uk | au | any
+    holdLookup: true,        // hold triggerKey and point at a word
+    triggerKey: 'Control',   // Control | Alt | Shift
+    doubleLookup: false,     // point at a word and press doubleKey twice
+    doubleKey: 'Control',    // Control | Alt | Shift
+    shortcutLookup: false,   // point at a word and press the shortcut
+    shortcut: 'Alt+KeyW',    // modifiers and a KeyboardEvent.code, e.g. Ctrl+Shift+KeyL
+    accents: { en: 'us' },   // preferred recording per language: an id from ACCENTS, or 'any'
     autoPlay: false,         // pronounce the word as soon as the popup opens
     highlight: true,         // mark saved words on web pages
     highlightLevels: [true, true, true, true, true], // which memory levels get marked
@@ -27,10 +32,59 @@ globalThis.Wover = (() => {
     translator: 'auto',      // auto (Google, then MyMemory) | google | mymemory
     myMemoryEmail: '',       // raises MyMemory's free daily limit
     cardDirection: 'word',   // word | meaning | mixed
+    reviewOnStartup: false,  // open the review when Firefox starts, if words are due
+    reviewRepeat: false,     // open it again reviewEvery hours after the last review, if words are due
+    reviewEvery: 24,         // hours
     disabledSites: [],       // hostnames where Wover stays off
     matchPageLang: true,     // highlight a word only on pages in its language, when the page says
     theme: 'system',         // dashboard and popup colours: system | light | dark
   };
+
+  const MODIFIER_KEYS = ['Control', 'Alt', 'Shift'];
+  const MAX_REVIEW_HOURS = 365 * 24;
+
+  // Regional pronunciations you can prefer, for languages whose Wiktionary entries have several.
+  // `match` finds them in the entry's accent labels (a=Austria) and recording names (De-at-Hund.ogg).
+  const ACCENTS = {
+    en: [
+      { id: 'us', name: 'American', match: /\b(US|GA|GenAm|General American|American)\b/i },
+      { id: 'uk', name: 'British', match: /\b(UK|RP|British|England|Southern England|London)\b/i },
+      { id: 'au', name: 'Australian', match: /\b(AU|AuE|Australia|Australian)\b/i },
+      { id: 'ca', name: 'Canadian', match: /\b(CA|Canada|Canadian|CanE)\b/i },
+    ],
+    de: [
+      { id: 'de', name: 'Germany', match: /\b(Germany|Berlin)\b|(^|\s)De-(?!at-|ch-)/i },
+      { id: 'at', name: 'Austria', match: /\b(Austria|Austrian|Vienna)\b|\bDe-at-/i },
+      { id: 'ch', name: 'Switzerland', match: /\b(Switzerland|Swiss)\b|\bDe-ch-/i },
+    ],
+    es: [
+      { id: 'es', name: 'Spain', match: /\b(Spain|Castilian|Madrid)\b/i },
+      { id: 'latam', name: 'Latin America', match: /\b(Latin America|Mexico|Colombia|Argentina|Peru|Chile|Venezuela|Cuba|Uruguay|Ecuador|Bolivia|Caribbean|Central America)\b|\bam-lat\b/i },
+    ],
+    fr: [
+      { id: 'fr', name: 'France', match: /\b(France|Paris|Parisian)\b/i },
+      { id: 'ca', name: 'Canada', match: /\b(Canada|Canadian|Quebec|Québec|Montreal)\b/i },
+    ],
+    nl: [
+      { id: 'nl', name: 'Netherlands', match: /\b(Netherlands|Holland|NL)\b/i },
+      { id: 'be', name: 'Belgium', match: /\b(Belgium|Belgian|Flanders|Flemish|BE)\b/i },
+    ],
+    pt: [
+      { id: 'br', name: 'Brazil', match: /\b(Brazil|Brazilian|BR|São Paulo|Rio de Janeiro)\b/i },
+      { id: 'pt', name: 'Portugal', match: /\b(Portugal|European Portuguese|Lisbon|Porto)\b|\bPT\b(?!-br)/i },
+    ],
+  };
+
+  // A lookup shortcut as written in settings, "Ctrl+Shift+KeyL": its modifiers and key code, or null
+  // if it isn't one. It needs Ctrl, Alt or Meta, or a function key, so it can't fire while typing.
+  function parseShortcut(text) {
+    const parts = String(text || '').split('+');
+    const code = parts.pop();
+    if (!/^[A-Za-z0-9]+$/.test(code) || /^(Control|Alt|Shift|Meta|OS)(Left|Right)?$/.test(code)) return null;
+    if (!parts.every((p) => ['Ctrl', 'Alt', 'Shift', 'Meta'].includes(p))) return null;
+    const sc = { ctrl: parts.includes('Ctrl'), alt: parts.includes('Alt'), shift: parts.includes('Shift'), meta: parts.includes('Meta'), code };
+    return sc.ctrl || sc.alt || sc.meta || /^F\d{1,2}$/.test(code) ? sc : null;
+  }
 
   const LANGUAGES = [
     ['af', 'Afrikaans'], ['sq', 'Albanian'], ['am', 'Amharic'], ['ar', 'Arabic'], ['hy', 'Armenian'],
@@ -125,6 +179,20 @@ globalThis.Wover = (() => {
     if (s.colorScheme === 'custom' && !validCustom(s.customColors)) s.colorScheme = 'amber';
     if (!validCustom(s.customColors)) s.customColors = null;
     if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = 'system';
+    for (const name of ['triggerKey', 'doubleKey']) {
+      if (!MODIFIER_KEYS.includes(s[name])) s[name] = DEFAULT_SETTINGS[name];
+    }
+    if (!parseShortcut(s.shortcut)) s.shortcut = DEFAULT_SETTINGS.shortcut;
+    const hours = Math.round(Number(s.reviewEvery));
+    s.reviewEvery = hours >= 1 ? Math.min(hours, MAX_REVIEW_HOURS) : DEFAULT_SETTINGS.reviewEvery;
+    // Older versions had one accent, for English.
+    const accents = raw && raw.accents && typeof raw.accents === 'object' ? raw.accents
+      : { en: raw && raw.accent ? raw.accent : DEFAULT_SETTINGS.accents.en };
+    s.accents = { ...DEFAULT_SETTINGS.accents };
+    for (const [lang, id] of Object.entries(accents)) {
+      if (ACCENTS[lang] && (id === 'any' || ACCENTS[lang].some((a) => a.id === id))) s.accents[lang] = id;
+    }
+    delete s.accent;
     s.disabledSites = Array.isArray(s.disabledSites) ? s.disabledSites.filter((x) => typeof x === 'string') : [];
     return s;
   }
@@ -344,7 +412,8 @@ globalThis.Wover = (() => {
   }
 
   return {
-    MINUTE, DAY, LEVELS, DEFAULT_SETTINGS, LANGUAGES, SCHEMES, schemeColors, normalizeSettings, rgba,
+    MINUTE, DAY, LEVELS, DEFAULT_SETTINGS, MODIFIER_KEYS, MAX_REVIEW_HOURS, ACCENTS, parseShortcut,
+    LANGUAGES, SCHEMES, schemeColors, normalizeSettings, rgba,
     baseLang, normLang, langName, keyOf, keyOfEntry, languageName, cleanText, newEntry, entryFromLookup,
     levelOf, schedule, formatDuration,
     variants, dayKey, siteDisabled, getSettings, getAllWords, h, icon,

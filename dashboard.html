@@ -95,27 +95,67 @@
 
         <div class="panel">
           <h2>Looking up words</h2>
-          <label class="field"><span>Hold this key and point at a word</span>
-            <select id="s-triggerKey">
-              <option value="Control">Ctrl</option>
-              <option value="Alt">Alt</option>
-              <option value="Shift">Shift</option>
-            </select>
-            <small>To look up a phrase, select it first, then hold the key over the selection.</small>
-          </label>
-          <label class="field"><span>Pronunciation accent</span>
-            <select id="s-accent">
-              <option value="us">American</option>
-              <option value="uk">British</option>
-              <option value="au">Australian</option>
-              <option value="any">Any</option>
-            </select>
-          </label>
-          <label class="check"><input id="s-autoPlay" type="checkbox"> Pronounce words automatically</label>
+          <div class="field" role="group" aria-labelledby="ways-label">
+            <span id="ways-label">Look up a word when you</span>
+            <div class="way">
+              <label class="check"><input id="s-holdLookup" type="checkbox"> Hold a key and point at it</label>
+              <select id="s-triggerKey" aria-label="Key to hold">
+                <option value="Control">Ctrl</option>
+                <option value="Alt">Alt</option>
+                <option value="Shift">Shift</option>
+              </select>
+            </div>
+            <div class="way">
+              <label class="check"><input id="s-doubleLookup" type="checkbox"> Point at it and press a key twice</label>
+              <select id="s-doubleKey" aria-label="Key to press twice">
+                <option value="Control">Ctrl</option>
+                <option value="Alt">Alt</option>
+                <option value="Shift">Shift</option>
+              </select>
+            </div>
+            <div class="way">
+              <label class="check"><input id="s-shortcutLookup" type="checkbox"> Point at it and press a shortcut</label>
+              <button class="btn shortcut" id="shortcut" type="button" aria-describedby="shortcut-hint"></button>
+            </div>
+            <small id="shortcut-hint" aria-live="polite"></small>
+            <small>To look up a phrase, select it first, then point at the selection.</small>
+          </div>
           <label class="field"><span>Turn Wover off on these sites</span>
             <textarea id="s-disabledSites" rows="3" placeholder="example.com"></textarea>
             <small>One site per line. Subdomains are included.</small>
           </label>
+        </div>
+
+        <div class="panel">
+          <h2>Pronunciation</h2>
+          <label class="check"><input id="s-autoPlay" type="checkbox"> Pronounce words automatically</label>
+          <div class="field" role="group" aria-labelledby="accents-label">
+            <span id="accents-label">Preferred accent</span>
+            <div id="accents"></div>
+            <small>For languages whose dictionary entries have recordings from several regions. Other languages use the first recording.</small>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Review</h2>
+          <label class="field"><span>Flashcards show</span>
+            <select id="s-cardDirection">
+              <option value="word">The word, and you recall its meaning</option>
+              <option value="meaning">The meaning, and you recall the word</option>
+              <option value="mixed">A mix of both</option>
+            </select>
+          </label>
+          <label class="check"><input id="s-reviewOnStartup" type="checkbox"> Open the review when Firefox starts</label>
+          <div class="field">
+            <div class="repeat">
+              <label class="check"><input id="s-reviewRepeat" type="checkbox"> Open it again after</label>
+              <span class="duration" role="group" aria-label="Time before the review opens again">
+                <input id="review-days" type="number" min="0" max="365" step="1" aria-label="Days"> days
+                <input id="review-hours" type="number" min="0" max="23" step="1" aria-label="Hours"> hours
+              </span>
+            </div>
+            <small>Counted from your last review. The review only opens when words are due.</small>
+          </div>
         </div>
 
         <div class="panel wide" id="highlighting">
@@ -141,17 +181,6 @@
               </div>
             </div>
           </div>
-        </div>
-
-        <div class="panel">
-          <h2>Review</h2>
-          <label class="field"><span>Flashcards show</span>
-            <select id="s-cardDirection">
-              <option value="word">The word, and you recall its meaning</option>
-              <option value="meaning">The meaning, and you recall the word</option>
-              <option value="mixed">A mix of both</option>
-            </select>
-          </label>
         </div>
 
         <div class="panel">

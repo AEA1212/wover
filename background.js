@@ -1,6 +1,6 @@
 'use strict';
 
-/* Background page: dictionary and translation lookups, audio, the toolbar badge. */
+/* Background page: dictionary and translation lookups, audio, the toolbar badge, review reminders. */
 
 const WIKI_HEADERS = { 'Api-User-Agent': 'Wover/1.0 (Firefox extension; word lookups)' };
 const CACHE_MAX = 200;
@@ -9,7 +9,7 @@ const cache = new Map();   // lookup results, oldest first
 let index = null;          // saved word -> { language: memory level }, shared with content scripts
 let googleBlockedUntil = 0; // skip Google for a while after it refuses a request
 let currentAudio = null;
-let badgeTimer = 0;
+let wordsTimer = 0;
 const parser = new DOMParser();
 
 /* ---------- events ---------- */
@@ -29,7 +29,10 @@ browser.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   let wordsChanged = false;
   for (const [key, { newValue, oldValue }] of Object.entries(changes)) {
-    if (key === 'settings') cache.clear();
+    if (key === 'settings') {
+      cache.clear();
+      scheduleReview();
+    }
     if (!key.startsWith('w:')) continue;
     wordsChanged = true;
     if (!index) continue;
@@ -38,8 +41,11 @@ browser.storage.onChanged.addListener((changes, area) => {
     else if (oldValue && key === Wover.keyOfEntry(oldValue)) removeFromIndex(oldValue);
   }
   if (wordsChanged) {
-    clearTimeout(badgeTimer);
-    badgeTimer = setTimeout(updateBadge, 500);
+    clearTimeout(wordsTimer);
+    wordsTimer = setTimeout(() => {
+      updateBadge();
+      scheduleReview();
+    }, 500);
   }
 });
 
@@ -55,9 +61,16 @@ browser.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === 'install') openDashboard('#settings');
 });
 
-browser.runtime.onStartup.addListener(startUp);
+browser.runtime.onStartup.addListener(async () => {
+  await startUp();
+  const { reviewOnStartup } = await Wover.getSettings();
+  if (reviewOnStartup && (await reviewStatus()).due) await openReview();
+});
 browser.action.onClicked.addListener(() => openDashboard());
-browser.alarms.onAlarm.addListener((alarm) => { if (alarm.name === 'badge') updateBadge(); });
+browser.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'badge') updateBadge();
+  else if (alarm.name === 'review') remindToReview();
+});
 
 async function startUp() {
   await migrate();
@@ -65,6 +78,7 @@ async function startUp() {
   await browser.action.setBadgeBackgroundColor({ color: '#52514e' });
   if (browser.action.setBadgeTextColor) await browser.action.setBadgeTextColor({ color: '#ffffff' });
   await updateBadge();
+  await scheduleReview();
 }
 
 // Version 1 keyed words by spelling alone (w:<word>); move them to w:<lang>:<word>.
@@ -103,6 +117,58 @@ async function updateBadge() {
   const split = byLang.size > 1 ? ` (${[...byLang].map(([lang, n]) => `${Wover.langName(lang)} ${n}`).join(', ')})` : '';
   await browser.action.setBadgeText({ text: due ? (due > 999 ? '999+' : String(due)) : '' });
   await browser.action.setTitle({ title: due ? `Wover: ${due} word${due === 1 ? '' : 's'} to review${split}` : 'Wover: my words' });
+}
+
+/* ---------- review reminders ---------- */
+
+// When you last reviewed or Wover last checked for words to review, and how many are due.
+async function reviewStatus() {
+  const { meta } = await browser.storage.local.get('meta');
+  const now = Date.now();
+  let last = (meta && meta.reviewCheckedAt) || 0;
+  let words = 0;
+  let due = 0;
+  for (const w of await Wover.getAllWords()) {
+    last = Math.max(last, w.lastReviewed || 0);
+    words++;
+    if ((w.due || 0) <= now) due++;
+  }
+  return { last, words, due };
+}
+
+const reviewPeriod = (settings) => settings.reviewEvery * 60 * Wover.MINUTE;
+
+// Settings' reviewRepeat: reviewEvery hours after you last reviewed (or Wover last checked),
+// open the review if words are due. Reviewing puts the check off again.
+async function scheduleReview() {
+  const settings = await Wover.getSettings();
+  const { last, words } = await reviewStatus();
+  if (!settings.reviewRepeat || !words) {
+    await browser.alarms.clear('review');
+    return;
+  }
+  const when = Math.max(last + reviewPeriod(settings), Date.now() + Wover.MINUTE);
+  browser.alarms.create('review', { when });
+}
+
+async function remindToReview() {
+  const settings = await Wover.getSettings();
+  const { last, due } = await reviewStatus();
+  if (!settings.reviewRepeat || Date.now() - last < reviewPeriod(settings) - Wover.MINUTE) await scheduleReview();
+  else if (due) await openReview();
+  else await checkedForReview();
+}
+
+async function openReview() {
+  await checkedForReview();
+  await openDashboard('#review');
+}
+
+// Count the next reviewEvery minutes from now.
+async function checkedForReview() {
+  const { meta } = await browser.storage.local.get('meta');
+  await browser.storage.local.set({ meta: { ...(meta || {}), reviewCheckedAt: Date.now() } });
+  await scheduleReview();
 }
 
 async function getIndex() {
@@ -166,7 +232,7 @@ async function lookup(text, pageLang, forcedLang) {
     preferred: settings.sourceLang !== 'auto' ? Wover.normLang(settings.sourceLang) : '',
     page: Wover.normLang(pageLang),
   };
-  const id = [query, prefs.forced, prefs.preferred, prefs.page, settings.targetLang, settings.accent, settings.translator].join('|');
+  const id = [query, prefs.forced, prefs.preferred, prefs.page, settings.targetLang, JSON.stringify(settings.accents), settings.translator].join('|');
   if (cache.has(id)) return cache.get(id);
 
   // Translate from the language the word is expected to be in, so German "Gift" becomes poison, not a present.
@@ -174,7 +240,7 @@ async function lookup(text, pageLang, forcedLang) {
   const translation = settings.targetLang ? translate(query, settings, hint) : Promise.resolve(null);
   // Without a hint, the translator's guess at the language helps pick the dictionary section.
   prefs.detected = hint ? Promise.resolve('') : translation.then((r) => Wover.normLang(r && r.src), () => '');
-  const [dict] = await Promise.allSettled([lookUpDictionary(query, prefs, settings.accent), translation]);
+  const [dict] = await Promise.allSettled([lookUpDictionary(query, prefs, settings.accents), translation]);
   let [tr] = await Promise.allSettled([translation]);
 
   // The dictionary found the word in another language than the translation assumed: translate again from it.
@@ -199,7 +265,7 @@ async function lookup(text, pageLang, forcedLang) {
   return result;
 }
 
-async function lookUpDictionary(query, prefs, accent) {
+async function lookUpDictionary(query, prefs, accents) {
   const lower = query.toLowerCase();
   const titles = [...new Set([lower, query])];
   const wikitext = fetchWikitext(titles[0]);
@@ -221,7 +287,7 @@ async function lookUpDictionary(query, prefs, accent) {
       }
     }
   } catch (err) {
-    if ((prefs.forced || prefs.preferred || prefs.page || 'en') === 'en') return lookUpFreeDictionary(lower, accent);
+    if ((prefs.forced || prefs.preferred || prefs.page || 'en') === 'en') return lookUpFreeDictionary(lower, accents);
     throw err;
   }
   if (!pick) return null;
@@ -244,7 +310,7 @@ async function lookUpDictionary(query, prefs, accent) {
   }
 
   const source = headword === titles[0] ? await wikitext : await fetchWikitext(headword);
-  const sound = parsePronunciation(source, parsed.language, pick.code, accent);
+  const sound = parsePronunciation(source, parsed.language, pick.code, accents);
   return {
     word: headword,
     lang: Wover.normLang(pick.code),
@@ -368,11 +434,12 @@ function htmlToText(html) {
 const tidy = (s) => String(s || '').replace(/\s+/g, ' ').replace(/\s+([,.;:])/g, '$1').trim();
 const clip = (s, n) => (s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s);
 
-const ACCENTS = {
-  us: /\b(US|GA|GenAm|General American|American)\b/i,
-  uk: /\b(UK|RP|British|England|Southern England|London)\b/i,
-  au: /\b(AU|AuE|Australia|Australian)\b/i,
-};
+// The pattern of the regional recording you prefer for a language (Settings), or null for any.
+function accentMatch(accents, lang) {
+  const code = Wover.normLang(lang);
+  const accent = (Wover.ACCENTS[code] || []).find((a) => a.id === (accents || {})[code]);
+  return accent ? accent.match : null;
+}
 
 function languageSection(wikitext, language) {
   if (!wikitext || !language) return '';
@@ -396,7 +463,7 @@ function templateArgs(body) {
 }
 
 // IPA and a recording from the {{IPA}} and {{audio}} templates of the word's language section.
-function parsePronunciation(wikitext, language, code, accent) {
+function parsePronunciation(wikitext, language, code, accents) {
   const ipas = [];
   const audios = [];
   for (const line of languageSection(wikitext, language).split('\n')) {
@@ -413,8 +480,12 @@ function parsePronunciation(wikitext, language, code, accent) {
       if (positional[0] !== code || !positional[1]) continue;
       audios.push({ value: positional[1], tag: `${lineAccent} ${named.a || ''} ${positional[2] || ''} ${positional[1]}` });
     }
+    // Spanish lists recordings inside its pronunciation template: {{es-pr|+<audio:Es-cielo.ogg<a:Latin America>>}}.
+    for (const m of line.matchAll(/<audio:([^<>]+?)(?:<a:([^<>]*)>)?>/g)) {
+      audios.push({ value: m[1].trim(), tag: `${lineAccent} ${m[2] || ''} ${m[1]}` });
+    }
   }
-  const prefer = ACCENTS[accent];
+  const prefer = accentMatch(accents, code);
   const pick = (list) => (prefer && list.find((x) => prefer.test(x.tag))) || list[0];
   const ipa = pick(ipas);
   const audio = pick(audios);
@@ -425,7 +496,7 @@ function parsePronunciation(wikitext, language, code, accent) {
 }
 
 // Used only when Wiktionary itself can't be reached.
-async function lookUpFreeDictionary(word, accent) {
+async function lookUpFreeDictionary(word, accents) {
   const res = await fetchWithTimeout(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`The dictionary answered ${res.status}.`);
@@ -447,7 +518,7 @@ async function lookUpFreeDictionary(word, accent) {
       }
     }
   }
-  const prefer = ACCENTS[accent];
+  const prefer = accentMatch(accents, 'en');
   const audio = (prefer && audios.find((a) => prefer.test(a.tag))) || audios[0];
   const headword = (entries[0] && entries[0].word) || word;
   return {

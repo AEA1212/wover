@@ -21,16 +21,17 @@
 
 ## ✨ Features
 
-- 🔍 Hold <kbd>Ctrl</kbd> and point at a word to see its definition, pronunciation and translation
+- 🔍 Hold <kbd>Ctrl</kbd> and point at a word to see its definition, pronunciation and translation (or press a key twice, or use your own shortcut)
 - ➕ Save words with one click, together with the sentence you found them in
 - 🖍️ Saved words are highlighted on every page, more strongly the less you know them
-- 🧠 Review them with spaced-repetition flashcards
+- 🔊 Pick the accent you hear for each language, like British English, Austrian German or Brazilian Portuguese
+- 🧠 Review them with spaced-repetition flashcards, and have the review open when Firefox starts or after the days and hours you choose
 - 🌍 Keep a separate list for each language
 - 🎨 Pick a colour scheme and a light, dark or system theme
 - 💾 Back up, restore and export your words
 - 🔒 Your words stay in your browser
 
-## 📸 Screenshots
+## 📸 Gallery
 
 | Review | Word lists |
 | --- | --- |
@@ -57,7 +58,7 @@
 ## 🚀 How to use
 
 1. Choose the language you want translations in (the settings open when you install Wover).
-2. On any web page, hold <kbd>Ctrl</kbd> and point at a word.
+2. On any web page, hold <kbd>Ctrl</kbd> and point at a word. You can change the key, or press it twice, or set your own shortcut in **Settings → Looking up words**.
 3. Click **+ Add to my … words**.
 4. Click the Wover button in the toolbar to review your words.
 
@@ -66,9 +67,3 @@
 ## 🔒 Privacy
 
 Your words and settings are stored only in Firefox. When you look a word up, only that word (or a sentence you ask to translate) is sent to Wiktionary and to a translation service (Google Translate or MyMemory).
-
----
-
-<p align="center">
-  <sub>⚠️ Mostly vibe coded and still a prototype, so it may have bugs. Back up your words now and then, and please report problems in <a href="../../issues">Issues</a>.</sub>
-</p>

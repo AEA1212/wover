@@ -396,7 +396,7 @@ mark { color: inherit; border-radius: 3px; padding: 0 1px; }
 .add-word input { flex: 0 1 320px; }
 .status { color: var(--ink-2); font-size: 14px; }
 
-input[type="text"], input[type="search"], input[type="email"], select, textarea {
+input[type="text"], input[type="search"], input[type="email"], input[type="number"], select, textarea {
   font: inherit;
   font-size: 14px;
   color: var(--ink);
@@ -469,6 +469,18 @@ select.attention { border-color: var(--l1); box-shadow: 0 0 0 3px var(--hl1); }
 .field small { color: var(--muted); font-size: 13px; }
 .check { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; font-size: 14px; }
 .check:has(input:disabled) { color: var(--muted); }
+.way { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; }
+.way .check { flex: 1; margin-bottom: 0; }
+.way select, .way .btn { flex: none; min-width: 96px; }
+.btn.shortcut { padding: 6px 10px; font-weight: 600; }
+.btn.shortcut.recording { border-color: var(--accent); box-shadow: 0 0 0 3px var(--hl1); }
+.way > span { flex: 1; font-size: 14px; }
+#accents select { width: 150px; }
+.repeat { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.repeat .check { margin-bottom: 0; }
+.duration { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; }
+.duration input { width: 64px; }
+.repeat:has(input[type="checkbox"]:not(:checked)) .duration { color: var(--muted); }
 .hl-preview { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .hl-preview .w { font-size: 15px; font-weight: 550; }
 #backup .row { margin-top: 14px; }

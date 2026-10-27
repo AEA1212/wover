@@ -181,7 +181,27 @@ function languageOptions(selected) {
     h('optgroup', { label: mine.length ? 'Other languages' : 'Languages' }, others.map(option)),
   ];
 }
-const keyLabel = () => ({ Control: 'Ctrl', Alt: 'Alt', Shift: 'Shift' })[state.settings.triggerKey] || 'Ctrl';
+const KEY_LABELS = { Control: 'Ctrl', Alt: 'Alt', Shift: 'Shift' };
+const CODE_LABELS = {
+  Backquote: '`', Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\', Semicolon: ';',
+  Quote: "'", Comma: ',', Period: '.', Slash: '/', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→',
+};
+
+// "Ctrl+Shift+KeyL" as people know it: "Ctrl+Shift+L".
+function shortcutLabel(text) {
+  const parts = String(text).split('+');
+  const code = parts.pop();
+  return [...parts, CODE_LABELS[code] || code.replace(/^(Key|Digit)/, '').replace(/^Numpad/, 'Num ')].join('+');
+}
+
+// How to look up `what` with the first lookup method that's on: "hold Ctrl and point at a word".
+function lookupHow(what) {
+  const s = state.settings;
+  if (s.holdLookup) return ['hold ', h('kbd', {}, KEY_LABELS[s.triggerKey]), ` and point at ${what}`];
+  if (s.doubleLookup) return [`point at ${what} and press `, h('kbd', {}, KEY_LABELS[s.doubleKey]), ' twice'];
+  if (s.shortcutLookup) return [`point at ${what} and press `, h('kbd', {}, shortcutLabel(s.shortcut))];
+  return ['turn on a way to look up words in Settings'];
+}
 const safeUrl = (url) => typeof url === 'string' && /^https?:\/\//i.test(url);
 const hostOf = (url) => { try { return new URL(url).hostname; } catch (err) { return url; } };
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -282,9 +302,14 @@ async function renderBanners() {
       h('button', { class: 'btn primary', type: 'button', onclick: requestAccess }, 'Allow access')));
   }
   if (!state.settings.targetLang) {
-    items.push(banner(['Welcome to Wover. Choose the language you want translations in, then hold ',
-      h('kbd', {}, keyLabel()), ' and point at any word on a web page.'],
+    items.push(banner(['Welcome to Wover. Choose the language you want translations in, then ',
+      lookupHow('any word on a web page'), '.'],
     state.tab === 'settings' ? null : h('a', { class: 'btn primary', href: '#settings' }, 'Choose language')));
+  }
+  const s = state.settings;
+  if (!s.holdLookup && !s.doubleLookup && !s.shortcutLookup) {
+    items.push(banner('All the ways to look up words are turned off, so pointing at words does nothing.',
+      state.tab === 'settings' ? null : h('a', { class: 'btn', href: '#settings' }, 'Settings')));
   }
   const last = state.meta.lastBackupAt || 0;
   if (state.words.size >= 10 && Date.now() - last > 14 * Wover.DAY) {
@@ -406,7 +431,7 @@ function emptyState() {
   return h('div', { class: 'empty' },
     h('h2', {}, 'Start by saving a few words'),
     h('ol', { class: 'steps' },
-      h('li', {}, 'On any web page, hold ', h('kbd', {}, keyLabel()), ' and point at a word.'),
+      h('li', {}, 'On any web page, ', lookupHow('a word'), '.'),
       h('li', {}, 'Click ', h('strong', {}, '+ Add to my words'), ' in the popup.'),
       h('li', {}, 'Come back here to review them. Saved words are highlighted on every page you read.')),
     h('p', { class: 'sub' }, 'You can also type words in on the My words tab.'));
@@ -667,8 +692,8 @@ function renderWords(fromStorage = false) {
   const ul = $('#word-list');
   const languages = showLanguages();
   if (!all.length) {
-    ul.replaceChildren(h('li', { class: 'empty-row' }, 'No words yet. Hold ', h('kbd', {}, keyLabel()),
-      ' and point at a word on any web page, or type one above.'));
+    ul.replaceChildren(h('li', { class: 'empty-row' }, 'No words yet. On any web page, ', lookupHow('a word'),
+      ', or type one above.'));
   } else if (!list.length) {
     ul.replaceChildren(h('li', { class: 'empty-row' }, 'No words match.'));
   } else {
@@ -849,6 +874,9 @@ function setUpSettings() {
   for (const el of document.querySelectorAll('[id^="s-"]')) {
     el.addEventListener('change', el.id === 's-targetLang' ? onTargetChange : saveSettings);
   }
+  setUpShortcutRecorder();
+  setUpAccents();
+  setUpReviewPeriod();
   $('#export-json').addEventListener('click', exportJSON);
   $('#export-csv').addEventListener('click', exportCSV);
   $('#import').addEventListener('click', () => $('#import-file').click());
@@ -1005,6 +1033,90 @@ function fillSettingsForm() {
   }
   $('#s-targetLang').classList.toggle('attention', !state.settings.targetLang);
   $('#s-matchPageLang').disabled = !state.settings.highlight;
+  $('#s-triggerKey').disabled = !state.settings.holdLookup;
+  $('#s-doubleKey').disabled = !state.settings.doubleLookup;
+  $('#shortcut').disabled = !state.settings.shortcutLookup;
+  if (!recording) $('#shortcut').textContent = shortcutLabel(state.settings.shortcut);
+  for (const select of document.querySelectorAll('#accents select')) {
+    select.value = state.settings.accents[select.dataset.lang] || 'any';
+  }
+  const hours = state.settings.reviewEvery;
+  $('#review-days').value = Math.floor(hours / 24);
+  $('#review-hours').value = hours % 24;
+  $('#review-days').disabled = $('#review-hours').disabled = !state.settings.reviewRepeat;
+}
+
+// A preferred accent per language that has regional recordings.
+function setUpAccents() {
+  const langs = Object.keys(Wover.ACCENTS).sort((a, b) => Wover.langName(a).localeCompare(Wover.langName(b)));
+  $('#accents').replaceChildren(...langs.map((lang) => h('label', { class: 'way' },
+    h('span', {}, Wover.langName(lang)),
+    h('select', {
+      'data-lang': lang,
+      onchange: (e) => updateSettings({ accents: { ...state.settings.accents, [lang]: e.target.value } }),
+    }, Wover.ACCENTS[lang].map((a) => h('option', { value: a.id }, a.name)), h('option', { value: 'any' }, 'Any')))));
+  fillSettingsForm();
+}
+
+// "Open it again after N days M hours", stored as hours.
+function setUpReviewPeriod() {
+  const save = () => {
+    const days = Math.max(0, Math.floor(Number($('#review-days').value) || 0));
+    const hours = Math.max(0, Math.floor(Number($('#review-hours').value) || 0));
+    updateSettings({ reviewEvery: Math.min(Math.max(days * 24 + hours, 1), Wover.MAX_REVIEW_HOURS) });
+  };
+  $('#review-days').addEventListener('change', save);
+  $('#review-hours').addEventListener('change', save);
+}
+
+/* ---------- recording the lookup shortcut ---------- */
+
+let recording = false;
+const SHORTCUT_HINT = 'Click the shortcut to change it.';
+
+function setUpShortcutRecorder() {
+  const button = $('#shortcut');
+  const hint = $('#shortcut-hint');
+  hint.textContent = SHORTCUT_HINT;
+  const stop = (message = SHORTCUT_HINT) => {
+    recording = false;
+    button.classList.remove('recording');
+    button.textContent = shortcutLabel(state.settings.shortcut);
+    hint.textContent = message;
+  };
+  button.addEventListener('click', () => {
+    if (recording) {
+      stop();
+      return;
+    }
+    recording = true;
+    button.classList.add('recording');
+    button.textContent = 'Press keys…';
+    hint.textContent = 'Press the keys you want, for example Alt+W or Ctrl+Shift+L. Esc cancels.';
+  });
+  button.addEventListener('blur', () => { if (recording) stop(); });
+  button.addEventListener('keydown', (e) => {
+    if (!recording) return;
+    if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey) return; // leave, and stop on blur
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Escape') {
+      stop();
+      return;
+    }
+    const mods = [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Meta'].filter(Boolean);
+    if (['Control', 'Alt', 'AltGraph', 'Shift', 'Meta', 'OS'].includes(e.key) || !e.code) {
+      button.textContent = mods.length ? `${mods.join('+')}+…` : 'Press keys…';
+      return;
+    }
+    const shortcut = [...mods, e.code].join('+');
+    if (!Wover.parseShortcut(shortcut)) {
+      button.textContent = 'Press keys…';
+      hint.textContent = `${shortcutLabel(shortcut)} would fire while you type. Add Ctrl or Alt, or use a function key like F2.`;
+      return;
+    }
+    updateSettings({ shortcut }).then(() => stop(`Saved. Point at a word and press ${shortcutLabel(shortcut)}.`));
+  });
 }
 
 // Read the plain form fields (s-<setting>) and save.

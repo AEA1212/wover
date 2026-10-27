@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Wover",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Hold a key and point at any word for its definition, pronunciation and translation. Save words, see them highlighted on every page, and review them with spaced repetition.",
   "icons": {
     "48": "icons/icon.svg",

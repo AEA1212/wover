@@ -1,6 +1,6 @@
 'use strict';
 
-/* Hold the trigger key and point at a word to look it up.
+/* Point at a word and hold a key, press a key twice or press a shortcut to look it up.
    Saved words are highlighted on the page, stronger for words you know less. */
 (() => {
   // Tiny frames are usually ads or widgets.
@@ -90,24 +90,32 @@
     highlighter.refresh();
   }
 
-  /* ---------- key + pointer ---------- */
+  /* ---------- keys + pointer ---------- */
 
   const pointer = { x: -1, y: -1 };
-  let comboPressed = false; // another key went down with the trigger, e.g. Ctrl+C
+  let comboPressed = false; // another key went down with the hold key, e.g. Ctrl+C
   let lookedUp = false;
   let holdTimer = 0;
   let moveTimer = 0;
   let lastHit = '';
+  let tapStart = 0; // when the double-press key went down; 0 once another key or a button did
+  let lastTap = 0;  // when its last quick press ended
 
   function onlyTriggerHeld(e) {
     const flag = MODIFIERS[settings.triggerKey];
     return !!e[flag] && ['ctrlKey', 'altKey', 'shiftKey', 'metaKey'].every((f) => f === flag || !e[f]);
   }
 
+  function isShortcut(e) {
+    const sc = settings.shortcutLookup && Wover.parseShortcut(settings.shortcut);
+    return !!sc && e.code === sc.code && e.ctrlKey === sc.ctrl && e.altKey === sc.alt
+      && e.shiftKey === sc.shift && e.metaKey === sc.meta;
+  }
+
   addEventListener('mousemove', (e) => {
     pointer.x = e.clientX;
     pointer.y = e.clientY;
-    if (!enabled || comboPressed || e.buttons || !onlyTriggerHeld(e)) return;
+    if (!enabled || !settings.holdLookup || comboPressed || e.buttons || !onlyTriggerHeld(e)) return;
     clearTimeout(moveTimer);
     moveTimer = setTimeout(lookUpAtPointer, 80);
   }, { capture: true, passive: true });
@@ -117,6 +125,8 @@
     if (/^I?FRAME$/.test(e.target.nodeName)) pointer.x = -1;
   }, { capture: true, passive: true });
   document.documentElement.addEventListener('mouseleave', () => { pointer.x = -1; });
+  // Ctrl+click twice isn't a double press.
+  addEventListener('mousedown', () => { tapStart = 0; lastTap = 0; }, { capture: true, passive: true });
 
   addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
@@ -124,6 +134,22 @@
       return;
     }
     if (!enabled) return;
+    if (e.key === settings.doubleKey) {
+      if (!e.repeat) tapStart = Date.now();
+    } else {
+      tapStart = 0;
+      lastTap = 0;
+    }
+    if (isShortcut(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      comboPressed = true;
+      clearTimeout(holdTimer);
+      clearTimeout(moveTimer);
+      if (!e.repeat) lookUpAtPointer();
+      return;
+    }
+    if (!settings.holdLookup) return;
     if (e.key === settings.triggerKey) {
       if (e.repeat) return;
       comboPressed = false;
@@ -141,7 +167,20 @@
   }, true);
 
   addEventListener('keyup', (e) => {
-    if (e.key !== settings.triggerKey) return;
+    if (settings.doubleLookup && e.key === settings.doubleKey) {
+      const now = Date.now();
+      const quick = tapStart > 0 && now - tapStart < 300;
+      tapStart = 0;
+      if (quick && now - lastTap < 500) {
+        lastTap = 0;
+        lookUpAtPointer();
+      } else {
+        lastTap = quick ? now : 0;
+      }
+      // A lone Alt press would otherwise toggle Firefox's menu bar between the two presses.
+      if (quick && e.key === 'Alt') e.preventDefault();
+    }
+    if (!settings.holdLookup || e.key !== settings.triggerKey) return;
     clearTimeout(holdTimer);
     comboPressed = false;
     // A lone Alt press would otherwise toggle Firefox's menu bar.
